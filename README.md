@@ -45,13 +45,6 @@ cd youtube-music-ultra-downloader
 python -m pip install -r requirements.txt
 ```
 
-**requirements.txt**
-
-```
-yt-dlp>=2023.01.06
-PyQt6>=6.4
-Pillow>=10.0
-```
 
 ### 3. Install ffmpeg
 
