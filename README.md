@@ -1,80 +1,164 @@
-# YouTube Music Downloader
+# YouTube Music Ultra Downloader 🎵  
+*A derivative project with enhanced GUI, thumbnails, and usability features*
 
-[🇬🇧 English version](docs/README_EN.md) | [📚 All documentation](docs/README.md)
+[![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)  
+[![yt-dlp](https://img.shields.io/badge/yt--dlp-latest-orange.svg)](https://github.com/yt-dlp/yt-dlp)  
+[![PyQt6](https://img.shields.io/badge/PyQt6-GUI-green.svg)](https://pypi.org/project/PyQt6/)  
 
-J'en avais marre d'attendre des heures pour télécharger mes playlists, alors j'ai fait ce script.
+---
 
-## Ce que ça fait
+## 📖 About
 
-- Télécharge plusieurs playlists en même temps
-- Utilise du multithreading pour aller plus vite
-- Sort en MP3 320kbps 
-- Reprend automatiquement si ça plante
+This project is a **derivative fork** of [Felzow47/youtube-music-downloader](https://github.com/Felzow47/youtube-music-downloader), expanded with major fixes and additions to improve both **usability** and **functionality**.  
 
-## Résultats
+Instead of a CLI-first approach, this version provides a **modern PyQt6 GUI** with playlist browsing, thumbnails, and integrated folder access.  
 
-Playlist de 100 titres : ~5 minutes au lieu de 20
-Playlist de 400 titres : ~15 minutes au lieu de 2h
+---
 
-## Installation
+## 🚀 Features
+
+- **GUI-first**: Full PyQt6 interface with playlist browser, thumbnails, and live status  
+- **Parallel downloads**: Configure concurrent playlist and per-playlist threads  
+- **High-quality audio**: MP3 320 kbps extraction with metadata via ffmpeg  
+- **Thumbnails**:  
+  - Save thumbnails alongside MP3s  
+  - Embed thumbnails into MP3s as cover art  
+  - Display thumbnails in the UI (Pillow fallback for WebP support)  
+- **Open Folder button**: Jump directly to your downloaded playlist folder  
+- **Context menu**: Right-click playlist list → “Open playlist folder”  
+- **Robust logging**: Errors saved to `logs/` for troubleshooting  
+- **Cross-platform**: Works on Windows, macOS, and Linux  
+
+---
+
+## 📦 Installation
+
+### 1. Clone the repository
+```bash
+git clone https://github.com/yourusername/youtube-music-ultra-downloader.git
+cd youtube-music-ultra-downloader
+````
+
+### 2. Install dependencies
 
 ```bash
-git clone https://github.com/Felzow47/youtube-music-downloader.git
-cd youtube-music-downloader
-pip install yt-dlp
+python -m pip install -r requirements.txt
 ```
 
-Il faut aussi FFmpeg installé sur votre machine.
+**requirements.txt**
 
-## Utilisation
-
-Le plus simple sur Windows : double-cliquez sur `ULTRA_DOWNLOADER.bat`
-
-Sinon : `python ultra_downloader.py`
-
-## Le script
-
-**ultra_downloader.py** - Script ultra-optimisé avec toutes les fonctionnalités :
-
-- Téléchargement de plusieurs playlists en parallèle
-- Vérification des playlists avant téléchargement
-- Gestion des caractères spéciaux dans les titres
-- Interface utilisateur améliorée
-- Statistiques détaillées
-- Organisation automatique dans le dossier `downloads/`
-
-## Organisation des fichiers
-
-Les playlists téléchargées sont automatiquement organisées :
-
-```text
-yt/
-├── downloads/
-│   ├── Ma Playlist Rock/
-│   │   ├── Chanson 1.mp3
-│   │   └── Chanson 2.mp3
-│   └── Ma Playlist Pop/
-│       ├── Hit 1.mp3
-│       └── Hit 2.mp3
-└── ultra_downloader.py
+```
+yt-dlp>=2023.01.06
+PyQt6>=6.4
+Pillow>=10.0
 ```
 
-## 🍪 Accès YouTube Premium
+### 3. Install ffmpeg
 
-Si vous avez un abonnement YouTube Premium et voulez télécharger des chansons exclusives Premium :
+Required for audio extraction & thumbnail embedding.
 
-1. Exportez vos cookies YouTube avec une extension de navigateur
-2. Placez le fichier `cookies.txt` dans le dossier du script
-3. Le script détectera automatiquement les cookies
+* **macOS**:
 
-👉 **Guide détaillé** : Consultez [COOKIES_GUIDE.md](docs/COOKIES_GUIDE.md) pour les instructions complètes.
+  ```bash
+  brew install ffmpeg
+  ```
+* **Ubuntu/Debian**:
 
-## Config recommandée
+  ```bash
+  sudo apt-get install ffmpeg
+  ```
+* **Windows**: [Download here](https://ffmpeg.org/download.html) and add to PATH
 
-- 2-3 playlists max en parallèle
-- 6-8 threads par playlist
-- Ne pas abuser sinon YouTube vous limite
+---
 
-## Légal
+## ▶️ Usage
 
-Respectez les droits d'auteur et les conditions d'utilisation de YouTube.
+Run the application:
+
+```bash
+python ultra_downloader_qt.py
+```
+
+1. Paste playlist URLs (comma-separated)
+2. Set playlist and video thread counts
+3. Optionally provide a `cookies.txt` for YouTube Music Premium
+4. Choose whether to **save + embed thumbnails**
+5. Click **Start**
+
+### Folder Access
+
+* Click **Open Folder** to open the current playlist’s download directory
+* Or right-click inside the playlist view → **Open playlist folder**
+
+Downloads are stored under:
+
+```
+downloads/<Playlist Name>/
+```
+
+Thumbnails are stored in:
+
+```
+downloads/<Playlist Name>/thumbnails/
+```
+
+---
+
+## 📷 Screenshots (Optional)
+
+> Add your screenshots or demo GIFs here for extra polish.
+> Example:
+>
+> ![Main UI](docs/screenshot_main.png)
+
+---
+
+## 🛠️ Derivative Project
+
+This project is based on [Felzow47/youtube-music-downloader](https://github.com/Felzow47/youtube-music-downloader).
+
+### 🔧 Additions & Fixes
+
+* ✅ PyQt6 GUI (replaces Tk/CLI)
+* ✅ Playlist browser with thumbnails
+* ✅ Thumbnails saving, embedding, and preview in UI
+* ✅ Cross-platform “Open Folder” button
+* ✅ Robust logging, duplicate detection, and improved requirements
+* ✅ WebP-safe thumbnails via Pillow
+
+---
+
+## 📋 Roadmap
+
+* [ ] Dark theme toggle
+* [ ] Per-track progress bars
+* [ ] Queue management for multiple playlists
+
+---
+
+## ⚠️ Fork Disclaimer
+
+This project is a **derivative fork** of [Felzow47/youtube-music-downloader](https://github.com/Felzow47/youtube-music-downloader).
+
+* The original author is **not responsible** for the fixes, changes, or features added here.
+* All issues and feature requests should be directed to **this repository**, not the original.
+* The original project provided the foundation for YouTube Music downloading functionality, while this fork introduces:
+
+  * PyQt6 GUI with playlist browser
+  * Thumbnail saving, embedding, and preview
+  * “Open Folder” integration
+  * Additional error handling and logging improvements
+
+If you’re looking for the **original minimal CLI project**, please check the [upstream repository](https://github.com/Felzow47/youtube-music-downloader).
+If you want the **enhanced GUI version with extra features**, stay here 🚀.
+
+---
+
+## 📜 License
+
+This project follows the license of the original repository.
+See [LICENSE](LICENSE) for details.
+
+```
+
+
