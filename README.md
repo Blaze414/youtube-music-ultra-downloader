@@ -104,12 +104,10 @@ downloads/<Playlist Name>/thumbnails/
 
 ---
 
-## 📷 Screenshots (Optional)
+## 📷 Screenshots 
 
-> Add your screenshots or demo GIFs here for extra polish.
-> Example:
->
-> ![Main UI](docs/screenshot_main.png)
+<img width="2086" height="1676" alt="CleanShot 2025-10-04 at 16 04 53@2x" src="https://github.com/user-attachments/assets/e1b1f63f-4d76-474b-9738-92dc330a5e23" />
+
 
 ---
 
