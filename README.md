@@ -150,6 +150,3 @@ If you want the **enhanced GUI version with extra features**, stay here 🚀.
 This project follows the license of the original repository.
 See [LICENSE](LICENSE) for details.
 
-```
-
-
