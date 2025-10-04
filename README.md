@@ -35,7 +35,7 @@ Instead of a CLI-first approach, this version provides a **modern PyQt6 GUI** wi
 
 ### 1. Clone the repository
 ```bash
-git clone https://github.com/yourusername/youtube-music-ultra-downloader.git
+git clone https://github.com/blaze414/youtube-music-ultra-downloader.git
 cd youtube-music-ultra-downloader
 ````
 
