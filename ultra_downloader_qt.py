@@ -1,17 +1,17 @@
 #!/usr/bin/env python3
 """
-YouTube Music Ultra Downloader — PyQt6 GUI (Open Folder button)
+YouTube Music Ultra Downloader — PyQt6 GUI
+Adds square-cropped album art embedding via Pillow + Mutagen.
 
-What’s new:
-- "Open Folder" button that opens the **exact playlist output directory**.
-- Button becomes enabled when the playlist directory is created.
-- Right-click context menu on the list -> "Open playlist folder".
-
-Other features kept:
-- Playlist browser (title + thumbnail)
-- Parallel downloads
-- MP3 320kbps with metadata
-- Thumbnails toggle (save + embed), robust thumbnail saving & WebP-safe display
+- Playlist browser: titles + thumbnails
+- Parallel downloads (playlist-level and per-playlist threads)
+- MP3 (320 kbps) + metadata
+- Thumbnails:
+    • Save and embed (yt-dlp)
+    • If missing, fetch & save PNG ourselves
+    • Now: center-crop to square (default 1000x1000) and embed via Mutagen
+- Open Folder button
+- WebP-safe display with Pillow fallback
 """
 
 from __future__ import annotations
@@ -30,6 +30,10 @@ from urllib.request import urlopen, Request
 
 import yt_dlp
 from PyQt6 import QtCore, QtGui, QtWidgets
+
+# NEW: Pillow + Mutagen for album art pipeline
+from PIL import Image
+from mutagen.id3 import ID3, APIC, error as ID3Error
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Logging / Globals
@@ -52,7 +56,6 @@ yt_dlp_logger.addHandler(_fh)
 yt_dlp_logger.setLevel(logging.WARNING)
 
 _stats_lock = threading.Lock()
-_PIL_AVAILABLE: Optional[bool] = None  # lazily determined
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Model
@@ -97,43 +100,32 @@ class GlobalStats:
 global_stats = GlobalStats()
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Image helpers (Pillow fallback for WebP/etc)
+# Image helpers (Qt pixmap + Pillow fallback)
 # ──────────────────────────────────────────────────────────────────────────────
-
-def _ensure_pil() -> bool:
-    global _PIL_AVAILABLE
-    if _PIL_AVAILABLE is not None:
-        return _PIL_AVAILABLE
-    try:
-        import PIL  # noqa
-        from PIL import Image  # noqa
-        _PIL_AVAILABLE = True
-    except Exception:
-        _PIL_AVAILABLE = False
-    return _PIL_AVAILABLE
 
 def pixmap_from_bytes(data: bytes) -> QtGui.QPixmap:
     pm = QtGui.QPixmap()
     if pm.loadFromData(data):
         return pm
-    if _ensure_pil():
-        from PIL import Image
+    # fallback via Pillow
+    try:
         from io import BytesIO
         im = Image.open(BytesIO(data)).convert("RGBA")
         qimg = QtGui.QImage(im.tobytes("raw", "RGBA"), im.width, im.height, QtGui.QImage.Format.Format_RGBA8888)
         return QtGui.QPixmap.fromImage(qimg)
-    return QtGui.QPixmap()
+    except Exception:
+        return QtGui.QPixmap()
 
 def pixmap_from_path(path: str) -> QtGui.QPixmap:
     pm = QtGui.QPixmap(path)
     if not pm.isNull():
         return pm
-    if _ensure_pil():
-        from PIL import Image
+    try:
         im = Image.open(path).convert("RGBA")
         qimg = QtGui.QImage(im.tobytes("raw", "RGBA"), im.width, im.height, QtGui.QImage.Format.Format_RGBA8888)
         return QtGui.QPixmap.fromImage(qimg)
-    return QtGui.QPixmap()
+    except Exception:
+        return QtGui.QPixmap()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Core helpers
@@ -235,6 +227,7 @@ def ensure_local_thumbnail(vid: str, out_dir: Path, remote_url: str) -> Optional
         if p.exists():
             return p
 
+    # fetch
     try:
         req = Request(remote_url, headers={"User-Agent": "Mozilla/5.0"})
         data = urlopen(req, timeout=10).read()
@@ -243,23 +236,71 @@ def ensure_local_thumbnail(vid: str, out_dir: Path, remote_url: str) -> Optional
         fallback = f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
         data = urlopen(Request(fallback, headers={"User-Agent": "Mozilla/5.0"}), timeout=10).read()
 
-    from PIL import Image
     from io import BytesIO
     im = Image.open(BytesIO(data)).convert("RGBA")
     out_png = thumb_dir / f"{vid}.png"
     im.save(out_png, format="PNG")
     return out_png
 
+# NEW: square crop + embed with Mutagen
+def crop_to_square(src_path: Path, dst_path: Optional[Path] = None, size: int = 1000) -> Path:
+    """
+    Center-crop to square and resize to `size`×`size`. Saves PNG and returns path.
+    """
+    if dst_path is None:
+        # Save next to original, with .square.png suffix
+        dst_path = src_path.with_suffix("")  # remove ext
+        dst_path = dst_path.with_name(dst_path.name + ".square.png")
+
+    img = Image.open(src_path).convert("RGBA")
+    w, h = img.size
+    m = min(w, h)
+    left = (w - m) // 2
+    top = (h - m) // 2
+    img = img.crop((left, top, left + m, top + m)).resize((size, size), Image.LANCZOS)
+    dst_path.parent.mkdir(parents=True, exist_ok=True)
+    img.save(dst_path, format="PNG")
+    return dst_path
+
+def embed_album_art_mp3(mp3_path: Path, art_path: Path):
+    """
+    Embed `art_path` image into MP3 as ID3 APIC (front cover) without re-encoding audio.
+    """
+    mime = "image/png" if art_path.suffix.lower() == ".png" else "image/jpeg"
+    try:
+        tags = ID3(mp3_path)
+    except ID3Error:
+        tags = ID3()
+
+    # Remove old cover(s)
+    for k in list(tags.keys()):
+        if k.startswith("APIC"):
+            del tags[k]
+
+    with open(art_path, "rb") as f:
+        img_data = f.read()
+
+    tags.add(APIC(
+        encoding=3,   # UTF-8
+        mime=mime,
+        type=3,       # front cover
+        desc="Cover",
+        data=img_data
+    ))
+    tags.save(mp3_path)
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Downloader (emits UI signals)
 # ──────────────────────────────────────────────────────────────────────────────
 
 class Downloader:
-    def __init__(self, ui_emit, thumbnails_enabled: bool):
+    def __init__(self, ui_emit, thumbnails_enabled: bool, square_album_art: bool = True, square_size: int = 1000):
         self.ui_emit = ui_emit
         self.stop_event = threading.Event()
         self._last_ui_ts = 0.0
         self.thumbnails_enabled = thumbnails_enabled
+        self.square_album_art = square_album_art
+        self.square_size = square_size
 
     def stop(self):
         self.stop_event.set()
@@ -318,10 +359,10 @@ class Downloader:
                         except Exception as e:
                             logger.error(f"Temp delete failed {m4a}: {e}")
 
-                # Make sure a separate thumbnail exists on disk and swap the row icon
+                # Ensure we have a thumbnail on disk
+                thumb_path = None
                 if self.thumbnails_enabled:
                     thumbs_dir = out_dir / "thumbnails"
-                    thumb_path = None
                     for ext in ("png", "jpg", "jpeg", "webp"):
                         p = thumbs_dir / f"{vid}.{ext}"
                         if p.exists():
@@ -334,8 +375,16 @@ class Downloader:
                         except Exception as e:
                             logger.error(f"ensure_local_thumbnail failed for {vid}: {e}")
 
-                    if thumb_path:
-                        self.ui_emit("item_icon", {"id": vid, "path": str(thumb_path)})
+                # NEW: Crop square & embed with Mutagen (no audio re-encode)
+                if self.thumbnails_enabled and thumb_path:
+                    try:
+                        square = crop_to_square(Path(thumb_path), size=self.square_size)
+                        embed_album_art_mp3(Path(found), square)
+                        self.ui_emit("line", f"🖼️  Embedded square album art: {square.name}")
+                        # Swap row icon to cropped art
+                        self.ui_emit("item_icon", {"id": vid, "path": str(square)})
+                    except Exception as e:
+                        logger.error(f"Album art embed failed for {found}: {e}")
 
                 global_stats.add_video_success()
                 self.ui_emit("line", f"✅ MP3 confirmed: {found.name}")
@@ -381,16 +430,16 @@ class Downloader:
         view_entries = [{"id": e.get("id"), "title": e.get("title") or "Unknown", "thumb_url": e.get("_thumb_url")} for e in entries]
         self.ui_emit("entries", {"playlist": name, "entries": view_entries})
 
-        # Pick output dir + ensure folders (including thumbnails/)
+        # Output dir + ensure thumbs folder
         out_dir = downloads_root / name
         c = 1
         while out_dir.exists() and any(out_dir.iterdir()):
             out_dir = downloads_root / f"{name}_{c}"
             c += 1
         out_dir.mkdir(parents=True, exist_ok=True)
-        (out_dir / "thumbnails").mkdir(parents=True, exist_ok=True)  # ensure exists
+        (out_dir / "thumbnails").mkdir(parents=True, exist_ok=True)
 
-        # Tell UI the final directory for this playlist (enables "Open Folder" button)
+        # For "Open Folder" button
         self.ui_emit("playlist_dir", {"playlist": name, "path": str(out_dir)})
 
         global_stats.add_playlist(len(entries))
@@ -469,7 +518,7 @@ class Bridge(QtCore.QObject):
     entries = QtCore.pyqtSignal(dict)        # {'playlist': str, 'entries': [{'id','title','thumb_url'}...]}
     item_status = QtCore.pyqtSignal(dict)    # {'id': str, 'status': ...}
     item_icon = QtCore.pyqtSignal(dict)      # {'id': str, 'path': str}
-    playlist_dir = QtCore.pyqtSignal(dict)   # {'playlist': str, 'path': str}  <-- NEW
+    playlist_dir = QtCore.pyqtSignal(dict)   # {'playlist': str, 'path': str}
 
     def emit(self, typ: str, payload):
         if typ == "line":
@@ -538,7 +587,7 @@ class Window(QtWidgets.QMainWindow):
         self.start = QtWidgets.QPushButton("Start"); ctrl.addWidget(self.start, 4, 0)
         self.stop  = QtWidgets.QPushButton("Stop");  self.stop.setEnabled(False); ctrl.addWidget(self.stop, 4, 1)
 
-        self.btn_open = QtWidgets.QPushButton("Open Folder")     # NEW
+        self.btn_open = QtWidgets.QPushButton("Open Folder")
         self.btn_open.setEnabled(False)
         ctrl.addWidget(self.btn_open, 4, 2)
         self.btn_open.clicked.connect(self.on_open_folder)
@@ -551,7 +600,7 @@ class Window(QtWidgets.QMainWindow):
         self.list = QtWidgets.QListWidget()
         self.list.setIconSize(QtCore.QSize(72, 72))
         self.list.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
-        self.list.customContextMenuRequested.connect(self.on_list_context_menu)  # NEW
+        self.list.customContextMenuRequested.connect(self.on_list_context_menu)
         vbox.addWidget(self.list, 2)
 
         # Logs
@@ -570,7 +619,7 @@ class Window(QtWidgets.QMainWindow):
         self.bridge.entries.connect(self.on_entries)
         self.bridge.item_status.connect(self.on_item_status)
         self.bridge.item_icon.connect(self.on_item_icon)
-        self.bridge.playlist_dir.connect(self.on_playlist_dir)  # NEW
+        self.bridge.playlist_dir.connect(self.on_playlist_dir)
 
         self.start.clicked.connect(self.on_start)
         self.stop.clicked.connect(self.on_stop)
@@ -579,8 +628,7 @@ class Window(QtWidgets.QMainWindow):
 
         # id -> QListWidgetItem
         self.items_by_id: Dict[str, QtWidgets.QListWidgetItem] = {}
-        # last playlist directory path
-        self.current_playlist_dir: Optional[Path] = None  # NEW
+        self.current_playlist_dir: Optional[Path] = None
 
         # default icons
         self.icon_down = self._emoji_icon("⬇")
@@ -668,8 +716,7 @@ class Window(QtWidgets.QMainWindow):
                 it.setIcon(QtGui.QIcon(pm))
 
     @QtCore.pyqtSlot(dict)
-    def on_playlist_dir(self, payload: dict):  # NEW
-        # store the output directory for the current playlist and enable button
+    def on_playlist_dir(self, payload: dict):
         p = payload.get("path")
         if p:
             self.current_playlist_dir = Path(p)
@@ -681,13 +728,13 @@ class Window(QtWidgets.QMainWindow):
         p, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Pick cookies.txt", str(Path.cwd()), "Text (*.txt);;All files (*.*)")
         if p: self.cookies.setText(p)
 
-    def on_open_folder(self):  # NEW
+    def on_open_folder(self):
         if self.current_playlist_dir and self.current_playlist_dir.exists():
             open_in_file_manager(self.current_playlist_dir)
         else:
             QtWidgets.QMessageBox.information(self, "Folder not ready", "No playlist folder available yet.")
 
-    def on_list_context_menu(self, pos):  # NEW
+    def on_list_context_menu(self, pos):
         if not self.current_playlist_dir:
             return
         menu = QtWidgets.QMenu(self)
@@ -713,15 +760,16 @@ class Window(QtWidgets.QMainWindow):
             c = None
 
         thumbs_enabled = self.chk_thumbs.isChecked()
-        self.downloader = Downloader(self.bridge.emit, thumbnails_enabled=thumbs_enabled)
+        # NEW: pass square_album_art=True and desired size
+        self.downloader = Downloader(self.bridge.emit, thumbnails_enabled=thumbs_enabled, square_album_art=True, square_size=1000)
 
         self.on_line("Starting downloads…")
         self.on_line(f"Playlists: {len(urls)}, playlist threads: {pl}, video threads: {v}")
         self.on_line(f"Using cookies: {c}" if c else "No cookies provided — some Premium tracks may fail.")
-        self.on_line("Thumbnails: ENABLED (save & embed into MP3)" if thumbs_enabled else "Thumbnails: DISABLED for files")
+        self.on_line("Thumbnails: ENABLED (save + embed into MP3)" if thumbs_enabled else "Thumbnails: DISABLED for files")
         self.start.setEnabled(False); self.stop.setEnabled(True); self.pb.setVisible(True)
         self.status.setText("Running…")
-        self.btn_open.setEnabled(False)  # will re-enable when dir is known
+        self.btn_open.setEnabled(False)
 
         def _worker():
             try:

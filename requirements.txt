@@ -6,3 +6,5 @@ PyQt6>=6.4
 
 # Thumbnail decoding & WebP fallback
 Pillow>=10.0
+
+mutagen>=1.47
