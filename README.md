@@ -157,7 +157,7 @@ It will:
 
 ---
 
-## Screenshots of the Experimental Modern UI (mockup version)
+## Screenshots (Experimental Version)
 
 
 <img width="1952" height="1786" alt="CleanShot 2026-04-19 at 21 56 33@2x" src="https://github.com/user-attachments/assets/44a52fdb-ebf1-47bc-93a6-b58fb64f636b" />
