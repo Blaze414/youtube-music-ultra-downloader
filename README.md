@@ -1,80 +1,196 @@
-# YouTube Music Downloader
+# YouTube Music Ultra Downloader
+*A derivative project with an enhanced PyQt6 GUI, multi-format audio support, embedded cover art, and quality-of-life fixes*
 
-[🇬🇧 English version](docs/README_EN.md) | [📚 All documentation](docs/README.md)
+[![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/)
+[![yt-dlp](https://img.shields.io/badge/yt--dlp-latest-orange.svg)](https://github.com/yt-dlp/yt-dlp)
+[![PyQt6](https://img.shields.io/badge/PyQt6-GUI-green.svg)](https://pypi.org/project/PyQt6/)
 
-J'en avais marre d'attendre des heures pour télécharger mes playlists, alors j'ai fait ce script.
+---
 
-## Ce que ça fait
+## About
 
-- Télécharge plusieurs playlists en même temps
-- Utilise du multithreading pour aller plus vite
-- Sort en MP3 320kbps 
-- Reprend automatiquement si ça plante
+This project is a **derivative fork** of [Felzow47/youtube-music-downloader](https://github.com/Felzow47/youtube-music-downloader), expanded with major fixes and additions to improve both **usability** and **functionality**.
 
-## Résultats
+Instead of a CLI-first workflow, this version focuses on a **modern PyQt6 desktop UI** with:
 
-Playlist de 100 titres : ~5 minutes au lieu de 20
-Playlist de 400 titres : ~15 minutes au lieu de 2h
+- playlist and single-track downloads
+- thumbnails and embedded cover art
+- resume/state tracking
+- richer logging and safer error handling
+- multiple output audio formats
+
+---
+
+## Features
+
+- **GUI-first workflow** with a modern PyQt6 interface, live logs, and track list
+- **Single track and playlist support** for YouTube and YouTube Music URLs
+- **Parallel downloads** with configurable group threads and per-group video threads
+- **Multiple output formats**:
+  - MP3 320 kbps
+  - FLAC
+  - AAC
+  - OGG
+  - Original quality
+- **Embedded artwork support**:
+  - save thumbnails locally
+  - embed artwork into downloaded files
+  - preview artwork inside the UI
+- **Resume support** via persistent per-playlist state files
+- **Watch mode** to download only newly added tracks
+- **M3U export** after playlist downloads
+- **Library tracking** with SQLite metadata storage
+- **Open Folder integration** for quick access to the current output directory
+- **Robust logging** in `logs/` for troubleshooting
+- **yt-dlp update check** on startup
+- **Cross-platform support** for macOS, Windows, and Linux
+
+---
+
+## Main Files
+
+- `ultra_downloader_qt_modern.py`
+  The main modern PyQt6 application.
+- `ultra_downloader.py`
+  Original-style CLI downloader.
+- `state_manager.py`
+  Persistent download/resume state.
+- `library_db.py`
+  SQLite-backed library tracking.
+- `playlist_watcher.py`
+  Watch mode helpers for new tracks.
+- `m3u_exporter.py`
+  Extended M3U playlist export.
+- `update_checker.py`
+  yt-dlp update checks.
+
+---
 
 ## Installation
 
+### 1. Clone the repository
+
 ```bash
-git clone https://github.com/Felzow47/youtube-music-downloader.git
-cd youtube-music-downloader
-pip install yt-dlp
+git clone https://github.com/blaze414/youtube-music-ultra-downloader.git
+cd youtube-music-ultra-downloader
 ```
 
-Il faut aussi FFmpeg installé sur votre machine.
+### 2. Install Python dependencies
 
-## Utilisation
+```bash
+python -m pip install -r requirements.txt
+```
 
-Le plus simple sur Windows : double-cliquez sur `ULTRA_DOWNLOADER.bat`
+### 3. Install ffmpeg
 
-Sinon : `python ultra_downloader.py`
+`ffmpeg` is required for audio extraction, metadata handling, and cover-art embedding.
 
-## Le script
+- **macOS**
 
-**ultra_downloader.py** - Script ultra-optimisé avec toutes les fonctionnalités :
+  ```bash
+  brew install ffmpeg
+  ```
 
-- Téléchargement de plusieurs playlists en parallèle
-- Vérification des playlists avant téléchargement
-- Gestion des caractères spéciaux dans les titres
-- Interface utilisateur améliorée
-- Statistiques détaillées
-- Organisation automatique dans le dossier `downloads/`
+- **Ubuntu / Debian**
 
-## Organisation des fichiers
+  ```bash
+  sudo apt-get update
+  sudo apt-get install ffmpeg
+  ```
 
-Les playlists téléchargées sont automatiquement organisées :
+- **Windows**
+
+  Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add it to your `PATH`.
+
+---
+
+## Usage
+
+### Main app
+
+```bash
+python ultra_downloader_qt_modern.py
+```
+
+### macOS launcher
+
+macOS users can also double-click:
 
 ```text
-yt/
-├── downloads/
-│   ├── Ma Playlist Rock/
-│   │   ├── Chanson 1.mp3
-│   │   └── Chanson 2.mp3
-│   └── Ma Playlist Pop/
-│       ├── Hit 1.mp3
-│       └── Hit 2.mp3
-└── ultra_downloader.py
+launch_mac.command
 ```
 
-## 🍪 Accès YouTube Premium
+It will:
 
-Si vous avez un abonnement YouTube Premium et voulez télécharger des chansons exclusives Premium :
+- create `.venv` automatically if needed
+- install missing Python dependencies
+- warn if `ffmpeg` is missing
 
-1. Exportez vos cookies YouTube avec une extension de navigateur
-2. Placez le fichier `cookies.txt` dans le dossier du script
-3. Le script détectera automatiquement les cookies
+### Basic flow
 
-👉 **Guide détaillé** : Consultez [COOKIES_GUIDE.md](docs/COOKIES_GUIDE.md) pour les instructions complètes.
+1. Paste one or more YouTube / YouTube Music URLs.
+2. Set group and video thread counts.
+3. Choose the output format.
+4. Optionally provide a `cookies.txt` file.
+5. Enable or disable thumbnail embedding.
+6. Click **Start**.
 
-## Config recommandée
+### Notes
 
-- 2-3 playlists max en parallèle
-- 6-8 threads par playlist
-- Ne pas abuser sinon YouTube vous limite
+- A `cookies.txt` file may help with age-restricted or Premium-only content.
+- Watch mode only downloads tracks that are not already recorded in the saved state.
+- Downloads are stored under `downloads/<Playlist Name>/`.
+- Thumbnails are stored under `downloads/<Playlist Name>/thumbnails/`.
+- Playlist downloads can generate a `playlist.m3u` file automatically.
 
-## Légal
+---
 
-Respectez les droits d'auteur et les conditions d'utilisation de YouTube.
+## Screenshots
+
+<img width="2086" height="1676" alt="CleanShot 2025-10-04 at 16 04 53@2x" src="https://github.com/user-attachments/assets/e1b1f63f-4d76-474b-9738-92dc330a5e23" />
+
+---
+
+## Recent Improvements
+
+- Fixed worker freezes caused by state lock re-entry on first run
+- Fixed GUI crashes caused by direct `qtawesome` icon calls
+- Fixed yt-dlp JS runtime argument formatting
+- Added direct fast-path handling for plain single-video URLs
+- Added safer output-file detection across multiple audio formats
+- Added album-art embedding support for MP3, FLAC, OGG, and M4A/AAC
+- Added smarter album-art cropping directly in the main modern Qt file
+
+---
+
+## Derivative Project Notes
+
+This project is based on [Felzow47/youtube-music-downloader](https://github.com/Felzow47/youtube-music-downloader).
+
+### Additions and fixes in this fork
+
+- PyQt6 GUI and richer desktop workflow
+- Playlist browser with thumbnail previews
+- Embedded artwork support
+- Resume/state persistence
+- Watch mode for new tracks only
+- M3U export and library tracking
+- Multi-format output support
+- More defensive logging and crash fixes
+
+---
+
+## Fork Disclaimer
+
+This repository is a **derivative fork** of [Felzow47/youtube-music-downloader](https://github.com/Felzow47/youtube-music-downloader).
+
+- The original author is **not responsible** for the fixes or features added here.
+- Issues and feature requests for GUI, cover art, watch mode, or other fork-specific behavior should be opened against **this repository**.
+- If you want the original lightweight project, please use the upstream repository.
+
+---
+
+## License
+
+This project follows the license of the original repository.
+See [LICENSE](LICENSE) for details.
