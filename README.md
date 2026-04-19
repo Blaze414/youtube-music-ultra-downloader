@@ -150,6 +150,9 @@ It will:
 
 <img width="2074" height="1802" alt="CleanShot 2026-04-19 at 20 45 03@2x" src="https://github.com/user-attachments/assets/7d6cf1d2-7d21-4a34-a763-6d20b7d1cd9c" />
 
+<img width="2074" height="1802" alt="CleanShot 2026-04-19 at 20 48 02@2x" src="https://github.com/user-attachments/assets/50b16863-29a3-4ae0-a551-bfb530a7bd10" />
+
+
 
 
 ---
