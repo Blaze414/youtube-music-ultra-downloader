@@ -157,6 +157,15 @@ It will:
 
 ---
 
+## Screenshots of the Experimental Modern UI (mockup version)
+
+
+<img width="1952" height="1786" alt="CleanShot 2026-04-19 at 21 56 33@2x" src="https://github.com/user-attachments/assets/44a52fdb-ebf1-47bc-93a6-b58fb64f636b" />
+
+
+<img width="1952" height="1786" alt="CleanShot 2026-04-19 at 21 57 03@2x" src="https://github.com/user-attachments/assets/b9e77531-691b-4f6f-9899-d404c807f1ca" />
+
+
 ## Recent Improvements
 
 - Fixed worker freezes caused by state lock re-entry on first run
