@@ -148,7 +148,8 @@ It will:
 ## Screenshots
 
 
-<img width="2972" height="1704" alt="CleanShot 2026-04-19 at 20 43 10@2x" src="https://github.com/user-attachments/assets/e5160721-8b04-4720-8a09-0730d04896ec" />
+<img width="2074" height="1802" alt="CleanShot 2026-04-19 at 20 45 03@2x" src="https://github.com/user-attachments/assets/7d6cf1d2-7d21-4a34-a763-6d20b7d1cd9c" />
+
 
 
 ---
