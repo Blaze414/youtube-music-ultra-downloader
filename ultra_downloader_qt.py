@@ -1,29 +1,17 @@
 #!/usr/bin/env python3
 """
 YouTube Music Ultra Downloader — PyQt6 GUI
-Supports: YouTube + YouTube Music (single track, album, playlist, mix)
+Adds square-cropped album art embedding via Pillow + Mutagen.
 
-What’s inside:
-- Paste ANY YouTube / YouTube Music URL(s)
-- Parallel downloads (playlist-level + per-playlist threads)
-- MP3 (320 kbps) + metadata via ffmpeg
+- Playlist browser: titles + thumbnails
+- Parallel downloads (playlist-level and per-playlist threads)
+- MP3 (320 kbps) + metadata
 - Thumbnails:
-    • Save locally and embed into MP3
-    • Center-crop to square (default 1000x1000) using Pillow
-    • Embed with Mutagen (no audio re-encode)
-    • Show per-track thumbnail in the list (WebP-safe)
-- “Open Folder” button to jump to destination
-- Robust MP3 detection:
-    • Output filenames now include the video ID
-    • Finder looks up by [ID] first, then by title
-
-Requirements (pip):
-    yt-dlp>=2023.01.06
-    PyQt6>=6.4
-    Pillow>=10.0
-    mutagen>=1.47
-
-Also install ffmpeg and make sure it’s on your PATH.
+    • Save and embed (yt-dlp)
+    • If missing, fetch & save PNG ourselves
+    • Now: center-crop to square (default 1000x1000) and embed via Mutagen
+- Open Folder button
+- WebP-safe display with Pillow fallback
 """
 
 from __future__ import annotations
@@ -43,6 +31,7 @@ from urllib.request import urlopen, Request
 import yt_dlp
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+# NEW: Pillow + Mutagen for album art pipeline
 from PIL import Image
 from mutagen.id3 import ID3, APIC, error as ID3Error
 
@@ -150,47 +139,23 @@ def clean_filename(title: Optional[str]) -> str:
         t = t.replace(a, b)
     return t.strip()
 
-def extract_any_fast(url: str) -> Tuple[str, List[Dict]]:
-    """
-    Unified extractor:
-    - If URL yields a playlist/album/mix: returns (playlist_title, entries)
-    - If URL is a single track/video: returns ("Single — <title>", [entry])
-    Each entry has id, title, and _thumb_url populated.
-    Supports music.youtube.com and youtube.com.
-    """
-    opts = {"quiet": True, "extract_flat": True, "socket_timeout": 30}
+def extract_playlist_fast(url: str) -> Tuple[str, List[Dict]]:
+    """Fast metadata-only extraction, returns (playlist_title, entries)."""
+    opts = {"quiet": True, "extract_flat": True, "dump_single_json": False, "socket_timeout": 30}
     try:
         with yt_dlp.YoutubeDL(opts) as ydl:
             info = ydl.extract_info(url, download=False)
-
-        # Playlist/album/mix case
-        entries = info.get("entries") or []
-        if entries:
-            title = info.get("title") or info.get("playlist_title") or f"Playlist_{int(time.time())}"
-            title = "".join(c for c in title if c.isalnum() or c in (" ", "-", "_")).strip()
-            cooked = []
-            for e in entries:
-                if not e or not e.get("id"):
-                    continue
-                vid = e["id"]
-                tlist = e.get("thumbnails") or []
-                thumb = tlist[-1]["url"] if tlist else f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
-                e["_thumb_url"] = thumb
-                cooked.append(e)
-            return title, cooked
-
-        # Single track/video case
-        vid = info.get("id")
-        title = info.get("title") or f"Video_{vid or int(time.time())}"
-        title = title.strip()
-        tlist = info.get("thumbnails") or []
-        thumb = tlist[-1]["url"] if tlist else (f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg" if vid else "")
-        entry = {"id": vid, "title": title, "_thumb_url": thumb}
-        folder = f"Single — {clean_filename(title)[:64]}"
-        return folder, [entry]
-
+        title = info.get("title", f"Playlist_{int(time.time())}")
+        title = "".join(c for c in title if c.isalnum() or c in (" ", "-", "_")).strip()
+        entries = [e for e in (info.get("entries") or []) if e and e.get("id")]
+        for e in entries:
+            vid = e.get("id")
+            tlist = e.get("thumbnails") or []
+            url0 = tlist[-1]["url"] if tlist else f"https://i.ytimg.com/vi/{vid}/hqdefault.jpg"
+            e["_thumb_url"] = url0
+        return title, entries
     except Exception as e:
-        logger.error(f"extract_any_fast failed for {url}: {e}")
+        logger.error(f"Playlist extract failed {url}: {e}")
         return "", []
 
 def already_downloaded(output_dir: Path, title: str) -> bool:
@@ -211,62 +176,31 @@ def already_downloaded(output_dir: Path, title: str) -> bool:
     return False
 
 def build_ydl_opts(output_dir: Path, cookies_path: Optional[Path], hook, thumbnails_enabled: bool):
-    """
-    yt-dlp config; optionally save & embed thumbnails.
-    Includes:
-      - Android player client (often avoids 403/429)
-      - Realistic headers
-      - Lower fragment concurrency to reduce throttling
-      - Geo-bypass hint (set country if needed)
-    """
+    """yt-dlp config; optionally save & embed thumbnails."""
     opts = {
         "format": "bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best",
-
         "postprocessors": [
             {"key": "FFmpegExtractAudio", "preferredcodec": "mp3", "preferredquality": "320"},
             {"key": "FFmpegMetadata", "add_metadata": True},
         ],
-
-        # Include ID in filename so we can find it robustly later
         "outtmpl": {
-            "default": str(output_dir / "%(title).95s [%(id)s].%(ext)s"),
+            "default": str(output_dir / "%(title).100s.%(ext)s"),
         },
-
-        # Networking / stability
-        "socket_timeout": 60,
-        "retries": 5,
+        "concurrent_fragment_downloads": 8,
         "fragment_retries": 5,
+        "retries": 5,
         "file_access_retries": 5,
         "retry_sleep_functions": {"http": lambda n: min(4 * (2 ** n), 30)},
+        "socket_timeout": 60,
         "http_chunk_size": 16 * 1024 * 1024,
         "buffersize": 16384,
-
-        # ↓ Lower this to avoid server throttling/rate limits that lead to 403
-        "concurrent_fragment_downloads": 3,
-
-        # Make requests look like a common client
-        "extractor_args": {
-            # Use Android client first; if needed you can try "tv" or "ios" as fallbacks
-            "youtube": {"player_client": ["android"]}
-        },
-        "http_headers": {
-            "User-Agent":       "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Mobile Safari/537.36",
-            "Accept-Language":  "en-US,en;q=0.9",
-            "Accept":           "*/*",
-        },
-
-        # If you regularly hit region blocks, set a country you want to bypass to:
-        # "geo_bypass": True, "geo_bypass_country": "US",
-        "geo_bypass": True,
-
         "keepvideo": False,
         "keep_video": False,
-        "ignoreerrors": False,
+        "ignoreerrors": True,
         "no_warnings": False,
         "extract_flat": False,
         "logger": logger,
         "progress_hooks": [hook],
-        "verbose": True,  # uncomment to see detailed reason in logs
     }
 
     if cookies_path and cookies_path.exists():
@@ -276,13 +210,12 @@ def build_ydl_opts(output_dir: Path, cookies_path: Optional[Path], hook, thumbna
         opts.update({
             "writethumbnail": True,
             "embedthumbnail": True,
-            "convert_thumbnails": "png",
+            "convert_thumbnails": "png",  # request conversion via ffmpeg
         })
         opts["outtmpl"]["thumbnail"] = str(output_dir / "thumbnails" / "%(id)s.%(ext)s")
         opts["postprocessors"].append({"key": "EmbedThumbnail"})
 
     return opts
-
 
 # Save a thumbnail file locally if none exists (PNG output)
 def ensure_local_thumbnail(vid: str, out_dir: Path, remote_url: str) -> Optional[Path]:
@@ -309,7 +242,7 @@ def ensure_local_thumbnail(vid: str, out_dir: Path, remote_url: str) -> Optional
     im.save(out_png, format="PNG")
     return out_png
 
-# Square crop + embed with Mutagen (no audio re-encode)
+# NEW: square crop + embed with Mutagen
 def crop_to_square(src_path: Path, dst_path: Optional[Path] = None, size: int = 1000) -> Path:
     """
     Center-crop to square and resize to `size`×`size`. Saves PNG and returns path.
@@ -401,31 +334,19 @@ class Downloader:
             return True
 
         opts = build_ydl_opts(out_dir, cookies, self.hook, self.thumbnails_enabled)
-        # use a canonical watch URL; yt-dlp handles music.youtube.com URLs too but we have id already
         url = f"https://www.youtube.com/watch?v={vid}"
         try:
             with yt_dlp.YoutubeDL(opts) as ydl:
                 ydl.download([url])
 
-            # Confirm MP3 exists (prefer ID-based match, then title fallback)
+            # Confirm MP3 exists
+            clean_t, orig_t = clean_filename(title).lower(), title.lower()
             found = None
-
-            # 1) ID-based exact-ish match
             for mp3 in out_dir.glob("*.mp3"):
-                stem = mp3.stem
-                if f"[{vid}]" in stem or vid in stem:
+                s = mp3.stem.lower()
+                if clean_t in s or s.startswith(clean_t[:20]) or orig_t[:20] in s or s.startswith(orig_t[:20]):
                     found = mp3
                     break
-
-            # 2) Title-based fallback
-            if not found:
-                clean_t, orig_t = clean_filename(title).lower(), title.lower()
-                for mp3 in out_dir.glob("*.mp3"):
-                    s = mp3.stem.lower()
-                    if (clean_t in s or s.startswith(clean_t[:20]) or
-                        orig_t[:20] in s or s.startswith(orig_t[:20])):
-                        found = mp3
-                        break
 
             if found:
                 # cleanup temp .m4a
@@ -454,7 +375,7 @@ class Downloader:
                         except Exception as e:
                             logger.error(f"ensure_local_thumbnail failed for {vid}: {e}")
 
-                # Square-crop & embed with Mutagen (no audio re-encode)
+                # NEW: Crop square & embed with Mutagen (no audio re-encode)
                 if self.thumbnails_enabled and thumb_path:
                     try:
                         square = crop_to_square(Path(thumb_path), size=self.square_size)
@@ -470,7 +391,6 @@ class Downloader:
                 self.ui_emit("item_status", {"id": vid, "status": "done"})
                 return True
 
-            # No mp3 detected
             global_stats.add_video_failure()
             msg = f"[{playlist_name}] MP3 not found after download: {title}"
             logger.error(msg)
@@ -501,8 +421,7 @@ class Downloader:
                     return
 
     def download_playlist(self, url: str, video_threads: int, downloads_root: Path, cookies: Optional[Path]) -> bool:
-        # unified extractor supports playlists/albums/mixes and single tracks
-        name, entries = extract_any_fast(url)
+        name, entries = extract_playlist_fast(url)
         if not entries:
             self.ui_emit("line", f"❌ No videos found: {url}")
             return False
@@ -555,8 +474,8 @@ class Downloader:
         root.mkdir(exist_ok=True)
 
         self.ui_emit("line", "🚀 ULTRA-OPTIMIZED START")
-        self.ui_emit("line", f"📊 {len(urls)} URLs, {playlist_threads} concurrent")
-        self.ui_emit("line", f"⚙️  {per_playlist_threads} video threads per URL")
+        self.ui_emit("line", f"📊 {len(urls)} playlists, {playlist_threads} concurrent")
+        self.ui_emit("line", f"⚙️  {per_playlist_threads} video threads per playlist")
 
         with ThreadPoolExecutor(max_workers=playlist_threads) as pool:
             futs = {pool.submit(self.download_playlist, u, per_playlist_threads, root, cookies): u for u in urls}
@@ -565,10 +484,10 @@ class Downloader:
                     return
                 try:
                     ok = fut.result()
-                    self.ui_emit("line", f"🎉 URL {'completed' if ok else 'failed'}: {futs[fut]}")
+                    self.ui_emit("line", f"🎉 Playlist {'completed' if ok else 'failed'}: {futs[fut]}")
                 except Exception as e:
-                    self.ui_emit("line", f"❌ Critical error: {e}")
-                    logger.error(f"Critical error {futs[fut]}: {e}")
+                    self.ui_emit("line", f"❌ Critical playlist error: {e}")
+                    logger.error(f"Critical playlist error {futs[fut]}: {e}")
 
         self.print_final_stats()
 
@@ -578,11 +497,11 @@ class Downloader:
         self.ui_emit("line", "\n" + "=" * 60)
         self.ui_emit("line", "🎉 === FINAL STATISTICS ===")
         self.ui_emit("line", "=" * 60)
-        self.ui_emit("line", f"📋 Groups: {a}/{b} completed")
-        self.ui_emit("line", f"🎵 Tracks: {c}/{e} succeeded")
+        self.ui_emit("line", f"📋 Playlists: {a}/{b} completed")
+        self.ui_emit("line", f"🎵 Videos: {c}/{e} succeeded")
         self.ui_emit("line", f"❌ Failures: {d}")
         self.ui_emit("line", f"⏱️  Total time: {elapsed:.1f}s")
-        self.ui_emit("line", f"🚀 Throughput: {c/elapsed:.2f} tracks/sec")
+        self.ui_emit("line", f"🚀 Throughput: {c/elapsed:.2f} videos/sec")
         eff = (c / e * 100) if e else 0.0
         self.ui_emit("line", f"💪 Efficiency: {eff:.1f}%")
         self.ui_emit("line", "=" * 60)
@@ -644,15 +563,15 @@ class Window(QtWidgets.QMainWindow):
         ctrl = QtWidgets.QGridLayout()
         vbox.addLayout(ctrl)
 
-        ctrl.addWidget(QtWidgets.QLabel("YouTube / YouTube Music URLs (comma-separated)"), 0, 0, 1, 8)
+        ctrl.addWidget(QtWidgets.QLabel("Playlist URLs (comma-separated)"), 0, 0, 1, 8)
         self.urls = QtWidgets.QLineEdit()
         ctrl.addWidget(self.urls, 1, 0, 1, 8)
 
-        ctrl.addWidget(QtWidgets.QLabel("Group threads (URLs)"), 2, 0)
+        ctrl.addWidget(QtWidgets.QLabel("Playlist threads"), 2, 0)
         self.pl = QtWidgets.QSpinBox(); self.pl.setRange(1, 4); self.pl.setValue(2)
         ctrl.addWidget(self.pl, 3, 0)
 
-        ctrl.addWidget(QtWidgets.QLabel("Video threads / group"), 2, 1)
+        ctrl.addWidget(QtWidgets.QLabel("Video threads / playlist"), 2, 1)
         self.v = QtWidgets.QSpinBox(); self.v.setRange(1, 12); self.v.setValue(6)
         ctrl.addWidget(self.v, 3, 1)
 
@@ -677,7 +596,7 @@ class Window(QtWidgets.QMainWindow):
         ctrl.addWidget(self.pb, 4, 3, 1, 3)
         self.status = QtWidgets.QLabel("Idle"); ctrl.addWidget(self.status, 4, 6)
 
-        # Playlist/track list
+        # Playlist list
         self.list = QtWidgets.QListWidget()
         self.list.setIconSize(QtCore.QSize(72, 72))
         self.list.setContextMenuPolicy(QtCore.Qt.ContextMenuPolicy.CustomContextMenu)
@@ -695,14 +614,11 @@ class Window(QtWidgets.QMainWindow):
         self.worker: Optional[threading.Thread] = None
 
         self.bridge.line.connect(self.on_line)
-               # progress/status
         self.bridge.progress.connect(self.on_progress)
         self.bridge.thumb.connect(self.on_thumb)
-               # list population + per-item updates
         self.bridge.entries.connect(self.on_entries)
         self.bridge.item_status.connect(self.on_item_status)
         self.bridge.item_icon.connect(self.on_item_icon)
-               # folder enable
         self.bridge.playlist_dir.connect(self.on_playlist_dir)
 
         self.start.clicked.connect(self.on_start)
@@ -829,7 +745,7 @@ class Window(QtWidgets.QMainWindow):
     def on_start(self):
         urls = [u.strip() for u in self.urls.text().split(',') if u.strip()]
         if not urls:
-            QtWidgets.QMessageBox.critical(self, "Missing URLs", "Paste at least one URL (YouTube or YouTube Music).")
+            QtWidgets.QMessageBox.critical(self, "Missing URLs", "Paste at least one playlist URL.")
             return
 
         pl = int(self.pl.value())
@@ -844,10 +760,11 @@ class Window(QtWidgets.QMainWindow):
             c = None
 
         thumbs_enabled = self.chk_thumbs.isChecked()
+        # NEW: pass square_album_art=True and desired size
         self.downloader = Downloader(self.bridge.emit, thumbnails_enabled=thumbs_enabled, square_album_art=True, square_size=1000)
 
         self.on_line("Starting downloads…")
-        self.on_line(f"URLs: {len(urls)}, group threads: {pl}, video threads: {v}")
+        self.on_line(f"Playlists: {len(urls)}, playlist threads: {pl}, video threads: {v}")
         self.on_line(f"Using cookies: {c}" if c else "No cookies provided — some Premium tracks may fail.")
         self.on_line("Thumbnails: ENABLED (save + embed into MP3)" if thumbs_enabled else "Thumbnails: DISABLED for files")
         self.start.setEnabled(False); self.stop.setEnabled(True); self.pb.setVisible(True)
